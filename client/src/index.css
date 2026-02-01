@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+
+  /* Base Colors - Dark Theme Default */
+  --background: 224 71% 4%;
+  --foreground: 210 40% 98%;
+
+  --card: 222 47% 7%; /* Slightly lighter than bg */
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222 47% 7%;
+  --popover-foreground: 210 40% 98%;
+
+  /* Gold/Amber for Prayer & Spirituality */
+  --primary: 43 96% 56%;
+  --primary-foreground: 222 47% 11%;
+
+  /* Blue/Indigo for Work & Focus */
+  --secondary: 217 91% 60%;
+  --secondary-foreground: 222 47% 11%;
+
+  /* Green/Emerald for Health & Growth */
+  --accent: 142 71% 45%;
+  --accent-foreground: 210 40% 98%;
+
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217 33% 17%;
+  --input: 217 33% 17%;
+  --ring: 43 96% 56%;
+
+  --radius: 1rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-body);
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, hsla(225,39%,10%,1) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, hsla(339,49%,10%,1) 0, transparent 50%);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    @apply font-bold tracking-tight;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-muted rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/50;
+}
+
+/* Islamic Geometric Pattern Overlay */
+.pattern-grid {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Glassmorphism Utilities */
+.glass {
+  @apply bg-card/60 backdrop-blur-md border border-white/5 shadow-xl;
+}
+
+.glass-hover {
+  @apply transition-all duration-300 hover:bg-card/80 hover:border-white/10 hover:shadow-2xl hover:-translate-y-1;
+}
+
+/* Animation Utilities */
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
