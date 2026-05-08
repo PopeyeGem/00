@@ -349,6 +349,24 @@
 </head>
 <body>
 
+<!-- Splash Screen -->
+<div id="splash" style="position:fixed;inset:0;background:#0d0f14;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <div style="width:72px;height:72px;background:linear-gradient(135deg,#f0a500,#e07b00);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#000;box-shadow:0 8px 32px rgba(240,165,0,.4)">K</div>
+  <div style="text-align:center">
+    <div style="font-size:20px;font-weight:800;color:#e8ecf5">Coach Khaled Eeta</div>
+    <div style="font-size:12px;color:#9ba3c2;margin-top:4px">Popeye Gym · نظام التحكم</div>
+  </div>
+  <div id="splash-msg" style="display:flex;align-items:center;gap:10px;font-size:14px;color:#5d6585">
+    <span style="font-size:24px">🗄️</span><span>جاري تهيئة قاعدة البيانات...</span>
+  </div>
+  <div style="width:200px;height:4px;background:#1c2030;border-radius:99px;overflow:hidden">
+    <div style="height:100%;background:linear-gradient(90deg,#f0a500,#ffd166);border-radius:99px;animation:splashLoad 1s ease-in-out infinite alternate;width:60%"></div>
+  </div>
+</div>
+<style>
+@keyframes splashLoad{from{width:20%}to{width:90%}}
+</style>
+
 <!-- PDF Hidden Area -->
 <div id="pdf-area"></div>
 <!-- Toast Container -->
@@ -442,6 +460,10 @@
         <input type="text" placeholder="بحث سريع..." id="global-search" oninput="globalSearch(this.value)">
       </div>
       <div class="topbar-actions">
+        <div id="save-status" style="display:flex;align-items:center;gap:5px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:110px;cursor:default" title="حالة قاعدة البيانات">
+          <span style="font-size:13px">🗄️</span><span style="color:var(--text3);font-size:11px;font-weight:600">جاري التحميل</span>
+        </div>
+        <div id="last-saved" style="font-size:10px;color:var(--text3);white-space:nowrap"></div>
         <button class="btn btn-secondary btn-icon" title="إشعارات" onclick="showNotif()">🔔</button>
         <button class="btn btn-primary" onclick="navigate('add-client');setNavActive('add-client')">
           ➕ متدرب جديد
@@ -1486,11 +1508,36 @@
           </div>
 
           <div class="card">
+            <div class="card-header"><div class="card-title">🗄️ قاعدة البيانات</div></div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
+                <div>
+                  <div style="font-size:13px;font-weight:700">IndexedDB</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">التخزين الرئيسي في المتصفح</div>
+                </div>
+                <span id="s-idb-status" class="badge badge-green">✅ مفعّل</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
+                <div>
+                  <div style="font-size:13px;font-weight:700">localStorage</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">نسخة احتياطية تلقائية</div>
+                </div>
+                <span class="badge badge-blue">🔄 احتياطي</span>
+              </div>
+              <div style="font-size:12px;color:var(--text2);padding:10px;background:rgba(6,214,160,.06);border-radius:8px;border:1px solid rgba(6,214,160,.2)">
+                💡 البيانات محفوظة في متصفحك — ستجدها عند كل دخول. للنقل بين أجهزة استخدم <strong>تصدير JSON</strong>.
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="checkDBSize()">📊 حجم قاعدة البيانات</button>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-header"><div class="card-title">ℹ️ معلومات النظام</div></div>
             <div style="font-size:13px;color:var(--text2);line-height:2">
               <div>الإصدار: <strong style="color:var(--text)">2.0 Pro</strong></div>
               <div>المتدربون: <strong style="color:var(--accent)" id="s-clients-count">0</strong></div>
               <div>البرامج المحفوظة: <strong style="color:var(--accent)" id="s-plans-count">0</strong></div>
+              <div>آخر حفظ: <strong style="color:var(--green)" id="s-last-saved">-</strong></div>
               <div>آخر تحديث: <strong style="color:var(--text)">مايو 2026</strong></div>
             </div>
           </div>
@@ -1582,16 +1629,125 @@ let state = {
 const COLORS = ['#4361ee','#7209b7','#f72585','#06d6a0','#ef476f','#ffd166','#118ab2','#06d6a0'];
 
 // ═══════════════════════════════════════════════════════════
-//  PERSISTENCE
+//  DATABASE (IndexedDB + localStorage fallback)
 // ═══════════════════════════════════════════════════════════
-function save() {
-  try { localStorage.setItem('cke_state', JSON.stringify(state)); } catch(e) {}
+const DB_NAME    = 'CoachKhaledDB';
+const DB_VERSION = 1;
+const STORE      = 'appState';
+const KEY        = 'main';
+let   db         = null;
+let   saveTimer  = null;
+let   dbReady    = false;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror   = e => reject(e.target.error);
+  });
 }
-function load() {
-  try {
-    const d = localStorage.getItem('cke_state');
-    if (d) { const p = JSON.parse(d); Object.assign(state, p); }
-  } catch(e) {}
+
+function dbPut(data) {
+  return new Promise((resolve, reject) => {
+    if (!db) { reject('DB not ready'); return; }
+    const tx  = db.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).put(data, KEY);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+function dbGet() {
+  return new Promise((resolve, reject) => {
+    if (!db) { reject('DB not ready'); return; }
+    const tx  = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(KEY);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+function setSaveStatus(status) {
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  const map = {
+    saving:  { icon: '⏳', text: 'جاري الحفظ...', color: 'var(--text3)' },
+    saved:   { icon: '✅', text: 'تم الحفظ',       color: 'var(--green)' },
+    error:   { icon: '❌', text: 'خطأ في الحفظ',   color: 'var(--red)'   },
+    loading: { icon: '🔄', text: 'جاري التحميل',   color: 'var(--accent)' },
+    ready:   { icon: '🗄️', text: 'قاعدة البيانات جاهزة', color: 'var(--green)' },
+  };
+  const m = map[status] || map.saved;
+  el.innerHTML = `<span style="font-size:13px">${m.icon}</span><span style="color:${m.color};font-size:11px;font-weight:600">${m.text}</span>`;
+}
+
+function save() {
+  if (saveTimer) clearTimeout(saveTimer);
+  setSaveStatus('saving');
+  saveTimer = setTimeout(async () => {
+    const data = {
+      clients: state.clients,
+      workoutPlans: state.workoutPlans,
+      nutritionPlans: state.nutritionPlans,
+      activities: state.activities,
+      settings: state.settings,
+      savedAt: new Date().toISOString()
+    };
+    try {
+      if (dbReady) {
+        await dbPut(data);
+      }
+      // Always also write to localStorage as backup
+      localStorage.setItem('cke_state_v2', JSON.stringify(data));
+      setSaveStatus('saved');
+      const el = document.getElementById('last-saved');
+      if (el) el.textContent = 'آخر حفظ: ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    } catch (err) {
+      console.error('Save error:', err);
+      try { localStorage.setItem('cke_state_v2', JSON.stringify(data)); setSaveStatus('saved'); } catch(e) { setSaveStatus('error'); }
+    }
+  }, 600);
+}
+
+async function load() {
+  setSaveStatus('loading');
+  let data = null;
+
+  // Try IndexedDB first
+  if (dbReady) {
+    try { data = await dbGet(); } catch(e) { console.warn('IndexedDB read failed, trying localStorage'); }
+  }
+
+  // Fallback to localStorage v2
+  if (!data) {
+    try {
+      const raw = localStorage.getItem('cke_state_v2');
+      if (raw) data = JSON.parse(raw);
+    } catch(e) {}
+  }
+
+  // Legacy fallback (old key)
+  if (!data) {
+    try {
+      const raw = localStorage.getItem('cke_state');
+      if (raw) { data = JSON.parse(raw); }
+    } catch(e) {}
+  }
+
+  if (data) {
+    if (Array.isArray(data.clients))       state.clients       = data.clients;
+    if (Array.isArray(data.workoutPlans))  state.workoutPlans  = data.workoutPlans;
+    if (Array.isArray(data.nutritionPlans))state.nutritionPlans= data.nutritionPlans;
+    if (Array.isArray(data.activities))    state.activities    = data.activities;
+    if (data.settings && typeof data.settings === 'object') Object.assign(state.settings, data.settings);
+  }
+
+  setSaveStatus('ready');
+  setTimeout(() => setSaveStatus('saved'), 2500);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2602,14 +2758,30 @@ function copyFormLink() {
 function loadSettingsPage() {
   const s = state.settings;
   document.getElementById('s-coach-name').value = s.coachName || '';
-  document.getElementById('s-whatsapp').value = s.whatsapp || '';
-  document.getElementById('s-gym').value = s.gym || '';
-  document.getElementById('s-insta').value = s.insta || '';
-  document.getElementById('s-fb').value = s.fb || '';
-  document.getElementById('s-pay1').value = s.pay1 || '';
-  document.getElementById('s-bank').value = s.bank || '';
+  document.getElementById('s-whatsapp').value   = s.whatsapp  || '';
+  document.getElementById('s-gym').value        = s.gym       || '';
+  document.getElementById('s-insta').value      = s.insta     || '';
+  document.getElementById('s-fb').value         = s.fb        || '';
+  document.getElementById('s-pay1').value       = s.pay1      || '';
+  document.getElementById('s-bank').value       = s.bank      || '';
   document.getElementById('s-clients-count').textContent = state.clients.length;
-  document.getElementById('s-plans-count').textContent = state.workoutPlans.length + state.nutritionPlans.length;
+  document.getElementById('s-plans-count').textContent   = state.workoutPlans.length + state.nutritionPlans.length;
+
+  // DB status
+  const idbEl = document.getElementById('s-idb-status');
+  if (idbEl) {
+    idbEl.className = dbReady ? 'badge badge-green' : 'badge badge-red';
+    idbEl.textContent = dbReady ? '✅ مفعّل' : '❌ غير متاح';
+  }
+  // Last saved
+  try {
+    const raw = localStorage.getItem('cke_state_v2');
+    if (raw) {
+      const d = JSON.parse(raw);
+      const el = document.getElementById('s-last-saved');
+      if (el && d.savedAt) el.textContent = formatDate(d.savedAt) + ' ' + new Date(d.savedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    }
+  } catch(e) {}
 }
 
 function saveSettings() {
@@ -2659,24 +2831,46 @@ function importData(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const d = JSON.parse(e.target.result);
-      Object.assign(state, d);
-      save(); updateBadges();
-      toast('تم استيراد البيانات بنجاح', 'success');
+      if (Array.isArray(d.clients))        state.clients        = d.clients;
+      if (Array.isArray(d.workoutPlans))   state.workoutPlans   = d.workoutPlans;
+      if (Array.isArray(d.nutritionPlans)) state.nutritionPlans = d.nutritionPlans;
+      if (Array.isArray(d.activities))     state.activities     = d.activities;
+      if (d.settings)                      Object.assign(state.settings, d.settings);
+      await save();
+      updateBadges();
+      toast(`✅ تم استيراد ${state.clients.length} متدرب و${state.workoutPlans.length} برنامج`, 'success');
       renderDashboard();
-    } catch { toast('ملف غير صالح', 'error'); }
+      loadSettingsPage();
+    } catch(err) { toast('ملف غير صالح أو تالف', 'error'); }
   };
   reader.readAsText(file);
 }
 
 function clearAllData() {
-  showConfirm('هل تريد مسح جميع البيانات نهائياً؟ سيتم حذف كل المتدربين والبرامج والاشتراكات.', () => {
+  showConfirm('هل تريد مسح جميع البيانات نهائياً؟ سيتم حذف كل المتدربين والبرامج والاشتراكات ولا يمكن التراجع.', async () => {
     state.clients = []; state.workoutPlans = []; state.nutritionPlans = []; state.activities = [];
-    save(); updateBadges(); toast('تم مسح جميع البيانات', 'info');
-    renderDashboard();
+    // Clear both storages
+    try {
+      if (dbReady) await dbPut({ clients:[], workoutPlans:[], nutritionPlans:[], activities:[], settings: state.settings, savedAt: new Date().toISOString() });
+      localStorage.removeItem('cke_state_v2');
+      localStorage.removeItem('cke_state');
+    } catch(e) {}
+    updateBadges(); toast('تم مسح جميع البيانات', 'info');
+    renderDashboard(); loadSettingsPage();
+    setSaveStatus('saved');
   });
+}
+
+async function checkDBSize() {
+  try {
+    const raw = localStorage.getItem('cke_state_v2') || '{}';
+    const lsSize = (new Blob([raw]).size / 1024).toFixed(1);
+    const idbSize = dbReady ? 'مفعّل ✅' : 'غير متاح ❌';
+    toast(`📊 LocalStorage: ${lsSize} KB | IndexedDB: ${idbSize} | متدربون: ${state.clients.length} | برامج: ${state.workoutPlans.length}`, 'info');
+  } catch(e) { toast('تعذر حساب الحجم', 'error'); }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2755,22 +2949,53 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.curr
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-function init() {
-  load();
+async function init() {
+  // Show splash
+  const splash = document.getElementById('splash');
+  if (splash) splash.style.display = 'flex';
+
+  // Open IndexedDB
+  try {
+    await openDB();
+    dbReady = true;
+    setSplashMsg('جاري تحميل البيانات...', '🗄️');
+  } catch(e) {
+    console.warn('IndexedDB unavailable, using localStorage only:', e);
+    dbReady = false;
+    setSplashMsg('تشغيل بدون قاعدة بيانات...', '⚠️');
+  }
+
+  // Load data
+  await load();
+
+  // Hide splash
+  setTimeout(() => {
+    if (splash) {
+      splash.style.opacity = '0';
+      splash.style.transition = 'opacity .4s';
+      setTimeout(() => { splash.style.display = 'none'; }, 400);
+    }
+  }, 700);
+
   updateBadges();
   renderDashboard();
   initMeals();
-  // Default section in workout builder
   addSection('CHEST + TRICEPS', templates['chest-tri'].exercises);
-  
-  // Set today's date
+
   const today = new Date().toISOString().split('T')[0];
   const startEl = document.getElementById('c-start');
   if (startEl) startEl.value = today;
-  
-  // Populate client selects
+
   populateClientSelect('wp-client');
   populateClientSelect('np-client');
+
+  // Auto-save every 2 minutes as extra safety
+  setInterval(() => save(), 120000);
+}
+
+function setSplashMsg(msg, icon) {
+  const el = document.getElementById('splash-msg');
+  if (el) el.innerHTML = `<span style="font-size:24px">${icon}</span><span>${msg}</span>`;
 }
 
 init();
